@@ -57,7 +57,6 @@ func main() {
 	router := proxy.NewRouter(
 		cfg.AuditServiceURL,
 		cfg.TaskTrackerServiceURL,
-		cfg.RestAuthServiceURL,
 	)
 
 	// Create proxy handler
@@ -155,7 +154,6 @@ func checkDownstreamHealth(cfg *config.Config, logger *log.Logger) bool {
 	services := map[string]string{
 		"audit":       cfg.AuditServiceURL,
 		"tasktracker": cfg.TaskTrackerServiceURL,
-		"restauth":    cfg.RestAuthServiceURL,
 	}
 
 	for name, url := range services {

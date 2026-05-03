@@ -13,7 +13,6 @@ type Config struct {
 	LogLevel              string
 	AuditServiceURL       string
 	TaskTrackerServiceURL string
-	RestAuthServiceURL    string
 	RateLimitPerMinute    int
 }
 
@@ -26,7 +25,6 @@ func LoadConfig() (*Config, error) {
 		LogLevel:              getEnv("LOG_LEVEL", "info"),
 		AuditServiceURL:       getEnv("AUDIT_SERVICE_URL", "http://localhost:8080"),
 		TaskTrackerServiceURL: getEnv("TASKTRACKER_SERVICE_URL", "http://localhost:8000"),
-		RestAuthServiceURL:    getEnv("RESTAUTH_SERVICE_URL", "http://localhost:8000"),
 		RateLimitPerMinute:    getEnvInt("RATE_LIMIT_PER_MINUTE", 100),
 	}
 
@@ -53,10 +51,6 @@ func (c *Config) Validate() error {
 
 	if c.TaskTrackerServiceURL == "" {
 		return fmt.Errorf("TASKTRACKER_SERVICE_URL must be set")
-	}
-
-	if c.RestAuthServiceURL == "" {
-		return fmt.Errorf("RESTAUTH_SERVICE_URL must be set")
 	}
 
 	if c.RateLimitPerMinute < 1 {
