@@ -8,24 +8,28 @@ import (
 
 // Config holds all configuration for the BFF service
 type Config struct {
-	Port                  int
-	KeycloakIssuerURI     string
-	LogLevel              string
-	AuditServiceURL       string
-	TaskTrackerServiceURL string
-	RateLimitPerMinute    int
+	Port                        int
+	KeycloakIssuerURI           string
+	LogLevel                    string
+	AuditServiceURL             string
+	TaskTrackerServiceURL       string
+	AuditServiceHealthPort      int
+	TaskTrackerServiceHealthPort int
+	RateLimitPerMinute          int
 }
 
 // LoadConfig loads configuration from environment variables
 // Returns Config with defaults and environment variable overrides
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		Port:                  getEnvInt("BFF_PORT", 7000),
-		KeycloakIssuerURI:     getEnv("KEYCLOAK_ISSUER_URI", "http://localhost:8180/realms/echo"),
-		LogLevel:              getEnv("LOG_LEVEL", "info"),
-		AuditServiceURL:       getEnv("AUDIT_SERVICE_URL", "http://localhost:8080"),
-		TaskTrackerServiceURL: getEnv("TASKTRACKER_SERVICE_URL", "http://localhost:8000"),
-		RateLimitPerMinute:    getEnvInt("RATE_LIMIT_PER_MINUTE", 100),
+		Port:                        getEnvInt("BFF_PORT", 7000),
+		KeycloakIssuerURI:           getEnv("KEYCLOAK_ISSUER_URI", "http://localhost:8180/realms/echo"),
+		LogLevel:                    getEnv("LOG_LEVEL", "info"),
+		AuditServiceURL:             getEnv("AUDIT_SERVICE_URL", "http://localhost:8080"),
+		TaskTrackerServiceURL:       getEnv("TASKTRACKER_SERVICE_URL", "http://localhost:8000"),
+		AuditServiceHealthPort:      getEnvInt("AUDIT_SERVICE_HEALTH_PORT", 8081),
+		TaskTrackerServiceHealthPort: getEnvInt("TASKTRACKER_SERVICE_HEALTH_PORT", 8000),
+		RateLimitPerMinute:          getEnvInt("RATE_LIMIT_PER_MINUTE", 100),
 	}
 
 	if err := cfg.Validate(); err != nil {

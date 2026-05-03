@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -151,16 +152,20 @@ func main() {
 
 // checkDownstreamHealth checks if downstream services are reachable
 func checkDownstreamHealth(cfg *config.Config, logger *log.Logger) bool {
-	services := map[string]string{
-		"audit":       cfg.AuditServiceURL,
-		"tasktracker": cfg.TaskTrackerServiceURL,
+	services := map[string]struct {
+		baseURL  string
+		healthPort int
+	}{
+		"audit":       {baseURL: cfg.AuditServiceURL, healthPort: cfg.AuditServiceHealthPort},
+		"tasktracker": {baseURL: cfg.TaskTrackerServiceURL, healthPort: cfg.TaskTrackerServiceHealthPort},
 	}
 
-	for name, url := range services {
-		if !checkServiceHealth(url, 2*time.Second) {
+	for name, svc := range services {
+		if !checkServiceHealth(svc.baseURL, svc.healthPort, 2*time.Second) {
 			logger.Warn("downstream service unavailable", map[string]interface{}{
 				"service": name,
-				"url":     url,
+				"url":     svc.baseURL,
+				"healthPort": svc.healthPort,
 			})
 			return false
 		}
@@ -169,18 +174,38 @@ func checkDownstreamHealth(cfg *config.Config, logger *log.Logger) bool {
 	return true
 }
 
-// checkServiceHealth checks if a service is reachable
-func checkServiceHealth(serviceURL string, timeout time.Duration) bool {
+// checkServiceHealth checks if a service is reachable on its health check port
+func checkServiceHealth(baseURL string, healthPort int, timeout time.Duration) bool {
 	client := &http.Client{
 		Timeout: timeout,
 	}
 
-	// Try to connect to the service (TCP check)
-	resp, err := client.Get(serviceURL + "/health")
+	// Build health check URL by replacing the port in the base URL
+	healthURL := replacePort(baseURL, healthPort) + "/health"
+
+	resp, err := client.Get(healthURL)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
 
 	return resp.StatusCode == http.StatusOK
+}
+
+// replacePort replaces the port in a URL with the specified port
+func replacePort(urlStr string, port int) string {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return urlStr
+	}
+
+	// Get the host without port
+	host := u.Hostname()
+	if host == "" {
+		host = u.Host
+	}
+
+	// Reconstruct URL with new port
+	u.Host = fmt.Sprintf("%s:%d", host, port)
+	return u.Scheme + "://" + u.Host
 }
