@@ -153,18 +153,30 @@ func main() {
 // checkDownstreamHealth checks if downstream services are reachable
 func checkDownstreamHealth(cfg *config.Config, logger *log.Logger) bool {
 	services := map[string]struct {
-		baseURL  string
+		baseURL    string
 		healthPort int
+		healthPath string
 	}{
-		"audit":       {baseURL: cfg.AuditServiceURL, healthPort: cfg.AuditServiceHealthPort},
-		"tasktracker": {baseURL: cfg.TaskTrackerServiceURL, healthPort: cfg.TaskTrackerServiceHealthPort},
+		"audit": {
+			baseURL:    cfg.AuditServiceURL,
+			healthPort: cfg.AuditServiceHealthPort,
+			healthPath: cfg.AuditServiceHealthPath,
+		},
+		"tasktracker": {
+			baseURL:    cfg.TaskTrackerServiceURL,
+			healthPort: cfg.TaskTrackerServiceHealthPort,
+			healthPath: cfg.TaskTrackerServiceHealthPath,
+		},
 	}
 
 	for name, svc := range services {
-		if !checkServiceHealth(svc.baseURL, svc.healthPort, 2*time.Second) {
+		healthURL := buildHealthURL(svc.baseURL, svc.healthPort, svc.healthPath)
+		if !checkServiceHealth(healthURL, 2*time.Second) {
 			logger.Warn("downstream service unavailable", map[string]interface{}{
-				"service": name,
-				"url":     svc.baseURL,
+				"service":    name,
+				"url":        svc.baseURL,
+				"healthURL":  healthURL,
+				"healthPath": svc.healthPath,
 				"healthPort": svc.healthPort,
 			})
 			return false
@@ -174,14 +186,15 @@ func checkDownstreamHealth(cfg *config.Config, logger *log.Logger) bool {
 	return true
 }
 
-// checkServiceHealth checks if a service is reachable on its health check port
-func checkServiceHealth(baseURL string, healthPort int, timeout time.Duration) bool {
+func buildHealthURL(baseURL string, healthPort int, healthPath string) string {
+	return replacePort(baseURL, healthPort) + healthPath
+}
+
+// checkServiceHealth checks if a service is reachable by health URL.
+func checkServiceHealth(healthURL string, timeout time.Duration) bool {
 	client := &http.Client{
 		Timeout: timeout,
 	}
-
-	// Build health check URL by replacing the port in the base URL
-	healthURL := replacePort(baseURL, healthPort) + "/health"
 
 	resp, err := client.Get(healthURL)
 	if err != nil {

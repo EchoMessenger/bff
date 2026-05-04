@@ -4,32 +4,37 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 // Config holds all configuration for the BFF service
 type Config struct {
-	Port                        int
-	KeycloakIssuerURI           string
-	LogLevel                    string
-	AuditServiceURL             string
-	TaskTrackerServiceURL       string
-	AuditServiceHealthPort      int
+	Port                         int
+	KeycloakIssuerURI            string
+	LogLevel                     string
+	AuditServiceURL              string
+	TaskTrackerServiceURL        string
+	AuditServiceHealthPort       int
+	AuditServiceHealthPath       string
 	TaskTrackerServiceHealthPort int
-	RateLimitPerMinute          int
+	TaskTrackerServiceHealthPath string
+	RateLimitPerMinute           int
 }
 
 // LoadConfig loads configuration from environment variables
 // Returns Config with defaults and environment variable overrides
 func LoadConfig() (*Config, error) {
 	cfg := &Config{
-		Port:                        getEnvInt("BFF_PORT", 7000),
-		KeycloakIssuerURI:           getEnv("KEYCLOAK_ISSUER_URI", "http://localhost:8180/realms/echo"),
-		LogLevel:                    getEnv("LOG_LEVEL", "info"),
-		AuditServiceURL:             getEnv("AUDIT_SERVICE_URL", "http://localhost:8080"),
-		TaskTrackerServiceURL:       getEnv("TASKTRACKER_SERVICE_URL", "http://localhost:8000"),
-		AuditServiceHealthPort:      getEnvInt("AUDIT_SERVICE_HEALTH_PORT", 8081),
+		Port:                         getEnvInt("BFF_PORT", 7000),
+		KeycloakIssuerURI:            getEnv("KEYCLOAK_ISSUER_URI", "http://localhost:8180/realms/echo"),
+		LogLevel:                     getEnv("LOG_LEVEL", "info"),
+		AuditServiceURL:              getEnv("AUDIT_SERVICE_URL", "http://localhost:8080"),
+		TaskTrackerServiceURL:        getEnv("TASKTRACKER_SERVICE_URL", "http://localhost:8000"),
+		AuditServiceHealthPort:       getEnvInt("AUDIT_SERVICE_HEALTH_PORT", 8081),
+		AuditServiceHealthPath:       getEnv("AUDIT_SERVICE_HEALTH_PATH", "/health"),
 		TaskTrackerServiceHealthPort: getEnvInt("TASKTRACKER_SERVICE_HEALTH_PORT", 8000),
-		RateLimitPerMinute:          getEnvInt("RATE_LIMIT_PER_MINUTE", 100),
+		TaskTrackerServiceHealthPath: getEnv("TASKTRACKER_SERVICE_HEALTH_PATH", "/health"),
+		RateLimitPerMinute:           getEnvInt("RATE_LIMIT_PER_MINUTE", 100),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -61,6 +66,24 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("RATE_LIMIT_PER_MINUTE must be greater than 0")
 	}
 
+	if err := validateHealthPath("AUDIT_SERVICE_HEALTH_PATH", c.AuditServiceHealthPath); err != nil {
+		return err
+	}
+
+	if err := validateHealthPath("TASKTRACKER_SERVICE_HEALTH_PATH", c.TaskTrackerServiceHealthPath); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func validateHealthPath(name, path string) error {
+	if path == "" {
+		return fmt.Errorf("%s must be set", name)
+	}
+	if !strings.HasPrefix(path, "/") {
+		return fmt.Errorf("%s must start with '/'", name)
+	}
 	return nil
 }
 

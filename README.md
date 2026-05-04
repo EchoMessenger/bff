@@ -119,6 +119,10 @@ See `.env.example` for all available options.
 | `KEYCLOAK_ISSUER_URI` | Required | JWT issuer URI for token validation |
 | `AUDIT_SERVICE_URL` | Required | Audit service base URL |
 | `TASKTRACKER_SERVICE_URL` | Required | TaskTracker service base URL |
+| `AUDIT_SERVICE_HEALTH_PORT` | `8081` | Audit service health-check port |
+| `TASKTRACKER_SERVICE_HEALTH_PORT` | `8000` | TaskTracker service health-check port |
+| `AUDIT_SERVICE_HEALTH_PATH` | `/health` | Audit service health-check path |
+| `TASKTRACKER_SERVICE_HEALTH_PATH` | `/health` | TaskTracker service health-check path |
 | `RATE_LIMIT_PER_MINUTE` | `100` | Requests per minute per IP address |
 
 ### Example .env.local
@@ -129,6 +133,10 @@ LOG_LEVEL=info
 KEYCLOAK_ISSUER_URI=http://localhost:8180/realms/echo
 AUDIT_SERVICE_URL=http://localhost:8081
 TASKTRACKER_SERVICE_URL=http://localhost:8000
+AUDIT_SERVICE_HEALTH_PORT=8081
+TASKTRACKER_SERVICE_HEALTH_PORT=8000
+AUDIT_SERVICE_HEALTH_PATH=/actuator/health/readiness
+TASKTRACKER_SERVICE_HEALTH_PATH=/health
 RATE_LIMIT_PER_MINUTE=100
 ```
 
