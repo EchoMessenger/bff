@@ -17,12 +17,11 @@ type Router struct {
 }
 
 // NewRouter creates a new router
-func NewRouter(auditURL, trackerURL, authURL string) *Router {
+func NewRouter(auditURL, trackerURL string) *Router {
 	return &Router{
 		routes: []Route{
 			{Path: "/bff/v1/audit/", TargetURL: auditURL},
 			{Path: "/bff/v1/tasktracker/", TargetURL: trackerURL},
-			{Path: "/bff/v1/auth/", TargetURL: authURL},
 		},
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -57,7 +58,6 @@ func main() {
 	router := proxy.NewRouter(
 		cfg.AuditServiceURL,
 		cfg.TaskTrackerServiceURL,
-		cfg.RestAuthServiceURL,
 	)
 
 	// Create proxy handler
@@ -152,17 +152,32 @@ func main() {
 
 // checkDownstreamHealth checks if downstream services are reachable
 func checkDownstreamHealth(cfg *config.Config, logger *log.Logger) bool {
-	services := map[string]string{
-		"audit":       cfg.AuditServiceURL,
-		"tasktracker": cfg.TaskTrackerServiceURL,
-		"restauth":    cfg.RestAuthServiceURL,
+	services := map[string]struct {
+		baseURL    string
+		healthPort int
+		healthPath string
+	}{
+		"audit": {
+			baseURL:    cfg.AuditServiceURL,
+			healthPort: cfg.AuditServiceHealthPort,
+			healthPath: cfg.AuditServiceHealthPath,
+		},
+		"tasktracker": {
+			baseURL:    cfg.TaskTrackerServiceURL,
+			healthPort: cfg.TaskTrackerServiceHealthPort,
+			healthPath: cfg.TaskTrackerServiceHealthPath,
+		},
 	}
 
-	for name, url := range services {
-		if !checkServiceHealth(url, 2*time.Second) {
+	for name, svc := range services {
+		healthURL := buildHealthURL(svc.baseURL, svc.healthPort, svc.healthPath)
+		if !checkServiceHealth(healthURL, 2*time.Second) {
 			logger.Warn("downstream service unavailable", map[string]interface{}{
-				"service": name,
-				"url":     url,
+				"service":    name,
+				"url":        svc.baseURL,
+				"healthURL":  healthURL,
+				"healthPath": svc.healthPath,
+				"healthPort": svc.healthPort,
 			})
 			return false
 		}
@@ -171,18 +186,39 @@ func checkDownstreamHealth(cfg *config.Config, logger *log.Logger) bool {
 	return true
 }
 
-// checkServiceHealth checks if a service is reachable
-func checkServiceHealth(serviceURL string, timeout time.Duration) bool {
+func buildHealthURL(baseURL string, healthPort int, healthPath string) string {
+	return replacePort(baseURL, healthPort) + healthPath
+}
+
+// checkServiceHealth checks if a service is reachable by health URL.
+func checkServiceHealth(healthURL string, timeout time.Duration) bool {
 	client := &http.Client{
 		Timeout: timeout,
 	}
 
-	// Try to connect to the service (TCP check)
-	resp, err := client.Get(serviceURL + "/health")
+	resp, err := client.Get(healthURL)
 	if err != nil {
 		return false
 	}
 	defer resp.Body.Close()
 
 	return resp.StatusCode == http.StatusOK
+}
+
+// replacePort replaces the port in a URL with the specified port
+func replacePort(urlStr string, port int) string {
+	u, err := url.Parse(urlStr)
+	if err != nil {
+		return urlStr
+	}
+
+	// Get the host without port
+	host := u.Hostname()
+	if host == "" {
+		host = u.Host
+	}
+
+	// Reconstruct URL with new port
+	u.Host = fmt.Sprintf("%s:%d", host, port)
+	return u.Scheme + "://" + u.Host
 }

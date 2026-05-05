@@ -1,6 +1,6 @@
 # Backend for Frontend (BFF) Service
 
-The BFF service is a reverse proxy and aggregation layer that sits between the React web frontend and backend microservices (Tinode, Audit, TaskTracker, RestAuth).
+The BFF service is a reverse proxy and aggregation layer that sits between the React web frontend and backend microservices (Tinode, Audit, TaskTracker).
 
 ## Purpose
 
@@ -23,9 +23,9 @@ The BFF service is a reverse proxy and aggregation layer that sits between the R
 │  │ Logging → RateLimit → Auth (JWT) → Proxy → Backend       │  │
 │  └──────────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────────┤
-│  ↓         ↓              ↓              ↓                      │
-│ Tinode   Audit      TaskTracker      RestAuth                   │
-│(WS+REST)(REST)      (REST)           (REST)                     │
+│  ↓         ↓              ↓                                      │
+│ Tinode   Audit      TaskTracker                                 │
+│(WS+REST)(REST)      (REST)                                      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,7 +62,6 @@ The BFF service is a reverse proxy and aggregation layer that sits between the R
 ### Proxy Routes
 - `/bff/v1/audit/*` → Routes to Audit service
 - `/bff/v1/tasktracker/*` → Routes to TaskTracker service
-- `/bff/v1/auth/*` → Routes to RestAuth service
 
 **Authentication required** for `/bff/v1/*` routes (Bearer token in Authorization header).
 
@@ -120,7 +119,10 @@ See `.env.example` for all available options.
 | `KEYCLOAK_ISSUER_URI` | Required | JWT issuer URI for token validation |
 | `AUDIT_SERVICE_URL` | Required | Audit service base URL |
 | `TASKTRACKER_SERVICE_URL` | Required | TaskTracker service base URL |
-| `RESTAUTH_SERVICE_URL` | Required | RestAuth service base URL |
+| `AUDIT_SERVICE_HEALTH_PORT` | `8081` | Audit service health-check port |
+| `TASKTRACKER_SERVICE_HEALTH_PORT` | `8000` | TaskTracker service health-check port |
+| `AUDIT_SERVICE_HEALTH_PATH` | `/health` | Audit service health-check path |
+| `TASKTRACKER_SERVICE_HEALTH_PATH` | `/health` | TaskTracker service health-check path |
 | `RATE_LIMIT_PER_MINUTE` | `100` | Requests per minute per IP address |
 
 ### Example .env.local
@@ -131,7 +133,10 @@ LOG_LEVEL=info
 KEYCLOAK_ISSUER_URI=http://localhost:8180/realms/echo
 AUDIT_SERVICE_URL=http://localhost:8081
 TASKTRACKER_SERVICE_URL=http://localhost:8000
-RESTAUTH_SERVICE_URL=http://localhost:8000
+AUDIT_SERVICE_HEALTH_PORT=8081
+TASKTRACKER_SERVICE_HEALTH_PORT=8000
+AUDIT_SERVICE_HEALTH_PATH=/actuator/health/readiness
+TASKTRACKER_SERVICE_HEALTH_PATH=/health
 RATE_LIMIT_PER_MINUTE=100
 ```
 

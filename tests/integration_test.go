@@ -33,16 +33,9 @@ func TestProxyRouting(t *testing.T) {
 	}))
 	defer tasktrackerServer.Close()
 
-	authauthServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"service": "restauth"})
-	}))
-	defer authauthServer.Close()
-
 	// Setup BFF
 	logger := log.New("info")
-	router := proxy.NewRouter(auditServer.URL, tasktrackerServer.URL, authauthServer.URL)
+	router := proxy.NewRouter(auditServer.URL, tasktrackerServer.URL)
 	proxyHandler := proxy.NewHandler(router, logger)
 
 	tests := []struct {
@@ -59,11 +52,6 @@ func TestProxyRouting(t *testing.T) {
 			name:     "Route to tasktracker service",
 			path:     "/bff/v1/tasktracker/tasks",
 			expected: "tasktracker",
-		},
-		{
-			name:     "Route to restauth service",
-			path:     "/bff/v1/auth/login",
-			expected: "restauth",
 		},
 	}
 
@@ -100,7 +88,7 @@ func TestHTTPMethods(t *testing.T) {
 	defer mockServer.Close()
 
 	logger := log.New("info")
-	router := proxy.NewRouter(mockServer.URL, "", "")
+	router := proxy.NewRouter(mockServer.URL, "")
 	proxyHandler := proxy.NewHandler(router, logger)
 
 	for _, method := range methods {
@@ -295,7 +283,7 @@ func TestHeaderForwarding(t *testing.T) {
 	defer mockServer.Close()
 
 	logger := log.New("info")
-	router := proxy.NewRouter(mockServer.URL, "", "")
+	router := proxy.NewRouter(mockServer.URL, "")
 	proxyHandler := proxy.NewHandler(router, logger)
 
 	req := httptest.NewRequest("GET", "/bff/v1/audit/test", nil)
@@ -324,7 +312,7 @@ func TestRequestBody(t *testing.T) {
 	defer mockServer.Close()
 
 	logger := log.New("info")
-	router := proxy.NewRouter(mockServer.URL, "", "")
+	router := proxy.NewRouter(mockServer.URL, "")
 	proxyHandler := proxy.NewHandler(router, logger)
 
 	testBody := []byte(`{"message":"test data"}`)
