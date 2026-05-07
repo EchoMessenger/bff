@@ -71,7 +71,7 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Copy headers from original request
-	copyHeaders(req.Header, r.Header)
+	copyRequestHeaders(req.Header, r.Header)
 
 	// Forward the request
 	client := &http.Client{}
@@ -88,8 +88,9 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 	defer resp.Body.Close()
 
-	// Copy response headers
-	copyHeaders(w.Header(), resp.Header)
+	// BFF owns browser-facing CORS for proxied routes, so upstream CORS headers
+	// must not leak through and combine into invalid multi-value responses.
+	copyResponseHeaders(w.Header(), resp.Header)
 
 	// Set status code
 	w.WriteHeader(resp.StatusCode)
@@ -102,9 +103,9 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// copyHeaders copies headers from source to destination
-// Skips hop-by-hop headers
-func copyHeaders(dst, src http.Header) {
+// copyRequestHeaders copies headers from source to destination.
+// Skips hop-by-hop headers.
+func copyRequestHeaders(dst, src http.Header) {
 	hopByHopHeaders := []string{
 		"Connection",
 		"Keep-Alive",
@@ -117,8 +118,43 @@ func copyHeaders(dst, src http.Header) {
 	}
 
 	for key, values := range src {
-		// Skip hop-by-hop headers
 		if isHopByHopHeader(key, hopByHopHeaders) {
+			continue
+		}
+		for _, value := range values {
+			dst.Add(key, value)
+		}
+	}
+}
+
+// copyResponseHeaders copies headers from source to destination.
+// Skips hop-by-hop headers and upstream CORS headers because BFF is the single
+// browser-facing CORS terminator for proxied routes.
+func copyResponseHeaders(dst, src http.Header) {
+	hopByHopHeaders := []string{
+		"Connection",
+		"Keep-Alive",
+		"Proxy-Authenticate",
+		"Proxy-Authorization",
+		"TE",
+		"Trailers",
+		"Transfer-Encoding",
+		"Upgrade",
+	}
+	corsHeaders := map[string]struct{}{
+		"access-control-allow-origin":      {},
+		"access-control-allow-methods":     {},
+		"access-control-allow-headers":     {},
+		"access-control-allow-credentials": {},
+		"access-control-expose-headers":    {},
+		"access-control-max-age":           {},
+	}
+
+	for key, values := range src {
+		if isHopByHopHeader(key, hopByHopHeaders) {
+			continue
+		}
+		if _, skip := corsHeaders[strings.ToLower(key)]; skip {
 			continue
 		}
 		for _, value := range values {

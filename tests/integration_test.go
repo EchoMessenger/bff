@@ -431,6 +431,47 @@ func TestCORSAllowsAuthenticatedGET(t *testing.T) {
 	}
 }
 
+func TestCORSStripsUpstreamCORSHeaders(t *testing.T) {
+	logger := log.New("info")
+
+	tasktrackerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Access-Control-Allow-Origin", "*")
+		w.Header().Add("Access-Control-Allow-Headers", "*")
+		w.Header().Add("Access-Control-Allow-Methods", "*")
+		w.Header().Add("Vary", "Accept-Encoding")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"service":"tasktracker"}`))
+	}))
+	defer tasktrackerServer.Close()
+
+	handler := buildBFFHandler(t, logger, tasktrackerServer.URL, []string{"http://localhost:8080"}, false)
+	token := newSignedBearerToken(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/bff/v1/tasktracker/health", nil)
+	req.Header.Set("Origin", "http://localhost:8080")
+	req.Header.Set("Authorization", token)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	if got := w.Header().Values("Access-Control-Allow-Origin"); len(got) != 1 || got[0] != "http://localhost:8080" {
+		t.Fatalf("Expected single BFF allow origin header, got %q", got)
+	}
+
+	if got := w.Header().Values("Access-Control-Allow-Headers"); len(got) != 1 || got[0] != "Authorization, Content-Type, Accept" {
+		t.Fatalf("Expected single BFF allow headers value, got %q", got)
+	}
+
+	if got := w.Header().Values("Access-Control-Allow-Methods"); len(got) != 1 || got[0] != "GET, POST, PUT, PATCH, DELETE, OPTIONS" {
+		t.Fatalf("Expected single BFF allow methods value, got %q", got)
+	}
+}
+
 func TestCORSDisallowedOriginDoesNotGetAllowOriginHeader(t *testing.T) {
 	logger := log.New("info")
 	handler := buildBFFHandler(t, logger, "", []string{"http://192.168.56.1:8080"}, false)
