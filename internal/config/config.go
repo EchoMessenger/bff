@@ -19,6 +19,8 @@ type Config struct {
 	TaskTrackerServiceHealthPort int
 	TaskTrackerServiceHealthPath string
 	RateLimitPerMinute           int
+	CORSAllowedOrigins           []string
+	CORSAllowCredentials         bool
 }
 
 // LoadConfig loads configuration from environment variables
@@ -35,6 +37,8 @@ func LoadConfig() (*Config, error) {
 		TaskTrackerServiceHealthPort: getEnvInt("TASKTRACKER_SERVICE_HEALTH_PORT", 8000),
 		TaskTrackerServiceHealthPath: getEnv("TASKTRACKER_SERVICE_HEALTH_PATH", "/health"),
 		RateLimitPerMinute:           getEnvInt("RATE_LIMIT_PER_MINUTE", 100),
+		CORSAllowedOrigins:           getEnvCSV("CORS_ALLOWED_ORIGINS"),
+		CORSAllowCredentials:         getEnvBool("CORS_ALLOW_CREDENTIALS", false),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -64,6 +68,12 @@ func (c *Config) Validate() error {
 
 	if c.RateLimitPerMinute < 1 {
 		return fmt.Errorf("RATE_LIMIT_PER_MINUTE must be greater than 0")
+	}
+
+	for _, origin := range c.CORSAllowedOrigins {
+		if !strings.Contains(origin, "://") {
+			return fmt.Errorf("invalid CORS origin %q", origin)
+		}
 	}
 
 	if err := validateHealthPath("AUDIT_SERVICE_HEALTH_PATH", c.AuditServiceHealthPath); err != nil {
@@ -103,4 +113,31 @@ func getEnvInt(key string, defaultVal int) int {
 		}
 	}
 	return defaultVal
+}
+
+func getEnvBool(key string, defaultVal bool) bool {
+	if value, exists := os.LookupEnv(key); exists {
+		if boolVal, err := strconv.ParseBool(value); err == nil {
+			return boolVal
+		}
+	}
+	return defaultVal
+}
+
+func getEnvCSV(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+
+	return result
 }

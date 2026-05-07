@@ -20,7 +20,7 @@ The BFF service is a reverse proxy and aggregation layer that sits between the R
 │                    BFF Service (Go)                             │
 │  Port 7000, Path: /bff/v1/*                                     │
 │  ┌──────────────────────────────────────────────────────────┐  │
-│  │ Logging → RateLimit → Auth (JWT) → Proxy → Backend       │  │
+│  │ CORS → Logging → RateLimit → Auth (JWT) → Proxy → Backend│  │
 │  └──────────────────────────────────────────────────────────┘  │
 ├─────────────────────────────────────────────────────────────────┤
 │  ↓         ↓              ↓                                      │
@@ -124,6 +124,8 @@ See `.env.example` for all available options.
 | `AUDIT_SERVICE_HEALTH_PATH` | `/health` | Audit service health-check path |
 | `TASKTRACKER_SERVICE_HEALTH_PATH` | `/health` | TaskTracker service health-check path |
 | `RATE_LIMIT_PER_MINUTE` | `100` | Requests per minute per IP address |
+| `CORS_ALLOWED_ORIGINS` | `` | Comma-separated list of allowed browser origins for `/bff/v1/*` |
+| `CORS_ALLOW_CREDENTIALS` | `false` | Adds `Access-Control-Allow-Credentials: true` for allowed origins |
 
 ### Example .env.local
 
@@ -138,6 +140,8 @@ TASKTRACKER_SERVICE_HEALTH_PORT=8000
 AUDIT_SERVICE_HEALTH_PATH=/actuator/health/readiness
 TASKTRACKER_SERVICE_HEALTH_PATH=/health
 RATE_LIMIT_PER_MINUTE=100
+CORS_ALLOWED_ORIGINS=http://192.168.56.1:8080,http://localhost:3000
+CORS_ALLOW_CREDENTIALS=false
 ```
 
 ## Docker Deployment
