@@ -31,7 +31,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 // Handle handles the actual proxy request
 func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 	// Find target service
-	targetURL, remainingPath := h.router.FindRoute(r.URL.Path)
+	targetURL, upstreamPath := h.router.FindRoute(r.URL.Path)
 	if targetURL == "" {
 		h.logger.Warn("route not found", map[string]interface{}{
 			"path": r.URL.Path,
@@ -42,7 +42,7 @@ func (h *Handler) Handle(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Build upstream URL
-	upstreamURL, err := BuildUpstreamURL(targetURL, remainingPath)
+	upstreamURL, err := BuildUpstreamURL(targetURL, upstreamPath)
 	if err != nil {
 		h.logger.Error("failed to build upstream URL", map[string]interface{}{
 			"error": err.Error(),

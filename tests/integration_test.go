@@ -28,14 +28,14 @@ func TestProxyRouting(t *testing.T) {
 	auditServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"service": "audit"})
+		json.NewEncoder(w).Encode(map[string]string{"service": "audit", "path": r.URL.Path})
 	}))
 	defer auditServer.Close()
 
 	tasktrackerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"service": "tasktracker"})
+		json.NewEncoder(w).Encode(map[string]string{"service": "tasktracker", "path": r.URL.Path})
 	}))
 	defer tasktrackerServer.Close()
 
@@ -45,19 +45,34 @@ func TestProxyRouting(t *testing.T) {
 	proxyHandler := proxy.NewHandler(router, logger)
 
 	tests := []struct {
-		name     string
-		path     string
-		expected string
+		name         string
+		path         string
+		expected     string
+		expectedPath string
 	}{
 		{
-			name:     "Route to audit service",
-			path:     "/bff/v1/audit/events",
-			expected: "audit",
+			name:         "Route to audit service",
+			path:         "/bff/v1/audit/events",
+			expected:     "audit",
+			expectedPath: "/api/v1/audit/events",
 		},
 		{
-			name:     "Route to tasktracker service",
-			path:     "/bff/v1/tasktracker/tasks",
-			expected: "tasktracker",
+			name:         "Route to audit analytics",
+			path:         "/bff/v1/analytics/summary",
+			expected:     "audit",
+			expectedPath: "/api/v1/analytics/summary",
+		},
+		{
+			name:         "Route to audit incidents",
+			path:         "/bff/v1/incidents",
+			expected:     "audit",
+			expectedPath: "/api/v1/incidents",
+		},
+		{
+			name:         "Route to tasktracker service",
+			path:         "/bff/v1/tasktracker/tasks",
+			expected:     "tasktracker",
+			expectedPath: "/tasks",
 		},
 	}
 
@@ -77,6 +92,10 @@ func TestProxyRouting(t *testing.T) {
 
 			if result["service"] != tt.expected {
 				t.Errorf("Expected service %s, got %s", tt.expected, result["service"])
+			}
+
+			if result["path"] != tt.expectedPath {
+				t.Errorf("Expected upstream path %s, got %s", tt.expectedPath, result["path"])
 			}
 		})
 	}
