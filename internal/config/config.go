@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -71,7 +72,7 @@ func (c *Config) Validate() error {
 	}
 
 	for _, origin := range c.CORSAllowedOrigins {
-		if !strings.Contains(origin, "://") {
+		if err := validateCORSOrigin(origin); err != nil {
 			return fmt.Errorf("invalid CORS origin %q", origin)
 		}
 	}
@@ -94,6 +95,35 @@ func validateHealthPath(name, path string) error {
 	if !strings.HasPrefix(path, "/") {
 		return fmt.Errorf("%s must start with '/'", name)
 	}
+	return nil
+}
+
+func validateCORSOrigin(origin string) error {
+	if origin == "" || strings.ContainsAny(origin, " \t\r\n") {
+		return fmt.Errorf("invalid origin")
+	}
+
+	parsed, err := url.ParseRequestURI(origin)
+	if err != nil {
+		return err
+	}
+
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("origin must include scheme and host")
+	}
+
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("origin must not include credentials, query, or fragment")
+	}
+
+	if parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("origin must not include a path")
+	}
+
+	if parsed.Host != parsed.Hostname() && parsed.Port() == "" {
+		return fmt.Errorf("invalid host")
+	}
+
 	return nil
 }
 
