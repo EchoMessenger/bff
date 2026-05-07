@@ -13,6 +13,7 @@ import (
 
 	"github.com/echomessenger/bff/internal/auth"
 	"github.com/echomessenger/bff/internal/config"
+	"github.com/echomessenger/bff/internal/cors"
 	"github.com/echomessenger/bff/internal/log"
 	"github.com/echomessenger/bff/internal/proxy"
 	"github.com/echomessenger/bff/internal/ratelimit"
@@ -89,11 +90,12 @@ func main() {
 	})
 
 	// BFF proxy routes with middleware chain
-	// Order matters: Logging → RateLimit → Auth → Proxy
+	// Order matters: CORS → Logging → RateLimit → Auth → Proxy
 	bffHandler := http.Handler(proxyHandler)
 	bffHandler = auth.AuthMiddleware(validator)(bffHandler)
 	bffHandler = ratelimit.RateLimitMiddleware(limiter)(bffHandler)
 	bffHandler = log.LoggingMiddleware(logger)(bffHandler)
+	bffHandler = cors.Middleware(cfg.CORSAllowedOrigins, cfg.CORSAllowCredentials)(bffHandler)
 
 	mux.Handle("/bff/v1/", bffHandler)
 

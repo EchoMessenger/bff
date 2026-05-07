@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -19,6 +20,8 @@ type Config struct {
 	TaskTrackerServiceHealthPort int
 	TaskTrackerServiceHealthPath string
 	RateLimitPerMinute           int
+	CORSAllowedOrigins           []string
+	CORSAllowCredentials         bool
 }
 
 // LoadConfig loads configuration from environment variables
@@ -35,6 +38,8 @@ func LoadConfig() (*Config, error) {
 		TaskTrackerServiceHealthPort: getEnvInt("TASKTRACKER_SERVICE_HEALTH_PORT", 8000),
 		TaskTrackerServiceHealthPath: getEnv("TASKTRACKER_SERVICE_HEALTH_PATH", "/health"),
 		RateLimitPerMinute:           getEnvInt("RATE_LIMIT_PER_MINUTE", 100),
+		CORSAllowedOrigins:           getEnvCSV("CORS_ALLOWED_ORIGINS"),
+		CORSAllowCredentials:         getEnvBool("CORS_ALLOW_CREDENTIALS", false),
 	}
 
 	if err := cfg.Validate(); err != nil {
@@ -66,6 +71,12 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("RATE_LIMIT_PER_MINUTE must be greater than 0")
 	}
 
+	for _, origin := range c.CORSAllowedOrigins {
+		if err := validateCORSOrigin(origin); err != nil {
+			return fmt.Errorf("invalid CORS origin %q", origin)
+		}
+	}
+
 	if err := validateHealthPath("AUDIT_SERVICE_HEALTH_PATH", c.AuditServiceHealthPath); err != nil {
 		return err
 	}
@@ -87,6 +98,35 @@ func validateHealthPath(name, path string) error {
 	return nil
 }
 
+func validateCORSOrigin(origin string) error {
+	if origin == "" || strings.ContainsAny(origin, " \t\r\n") {
+		return fmt.Errorf("invalid origin")
+	}
+
+	parsed, err := url.ParseRequestURI(origin)
+	if err != nil {
+		return err
+	}
+
+	if parsed.Scheme == "" || parsed.Host == "" {
+		return fmt.Errorf("origin must include scheme and host")
+	}
+
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("origin must not include credentials, query, or fragment")
+	}
+
+	if parsed.Path != "" && parsed.Path != "/" {
+		return fmt.Errorf("origin must not include a path")
+	}
+
+	if parsed.Host != parsed.Hostname() && parsed.Port() == "" {
+		return fmt.Errorf("invalid host")
+	}
+
+	return nil
+}
+
 // getEnv returns environment variable or default value
 func getEnv(key, defaultVal string) string {
 	if value, exists := os.LookupEnv(key); exists {
@@ -103,4 +143,31 @@ func getEnvInt(key string, defaultVal int) int {
 		}
 	}
 	return defaultVal
+}
+
+func getEnvBool(key string, defaultVal bool) bool {
+	if value, exists := os.LookupEnv(key); exists {
+		if boolVal, err := strconv.ParseBool(value); err == nil {
+			return boolVal
+		}
+	}
+	return defaultVal
+}
+
+func getEnvCSV(key string) []string {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return nil
+	}
+
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			result = append(result, part)
+		}
+	}
+
+	return result
 }

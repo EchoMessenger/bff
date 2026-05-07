@@ -2,18 +2,24 @@ package integration
 
 import (
 	"bytes"
+	"crypto/rand"
+	"crypto/rsa"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
 	"github.com/echomessenger/bff/internal/auth"
+	"github.com/echomessenger/bff/internal/cors"
 	"github.com/echomessenger/bff/internal/log"
 	"github.com/echomessenger/bff/internal/proxy"
 	"github.com/echomessenger/bff/internal/ratelimit"
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // TestProxyRouting tests that requests are routed to correct services
@@ -328,4 +334,213 @@ func TestRequestBody(t *testing.T) {
 	if !bytes.Contains(w.Body.Bytes(), []byte("test data")) {
 		t.Error("Expected request body to be forwarded")
 	}
+}
+
+func TestCORSPreflightBypassesAuth(t *testing.T) {
+	logger := log.New("info")
+	upstreamCalls := 0
+
+	tasktrackerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer tasktrackerServer.Close()
+
+	handler := buildBFFHandler(t, logger, tasktrackerServer.URL, []string{"http://192.168.56.1:8080"}, false)
+
+	req := httptest.NewRequest(http.MethodOptions, "/bff/v1/tasktracker/v1/tasks/", nil)
+	req.Header.Set("Origin", "http://192.168.56.1:8080")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	req.Header.Set("Access-Control-Request-Headers", "Authorization, Content-Type, Accept")
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Expected status 204, got %d", w.Code)
+	}
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "http://192.168.56.1:8080" {
+		t.Fatalf("Expected allow origin header, got %q", got)
+	}
+
+	if got := w.Header().Get("Access-Control-Allow-Methods"); got != "GET, POST, PUT, PATCH, DELETE, OPTIONS" {
+		t.Fatalf("Unexpected allow methods header: %q", got)
+	}
+
+	if got := w.Header().Get("Access-Control-Allow-Headers"); got != "Authorization, Content-Type, Accept" {
+		t.Fatalf("Unexpected allow headers header: %q", got)
+	}
+
+	if upstreamCalls != 0 {
+		t.Fatalf("Expected preflight not to reach upstream, got %d calls", upstreamCalls)
+	}
+}
+
+func TestCORSAllowsAuthenticatedGET(t *testing.T) {
+	logger := log.New("info")
+	receivedAuth := ""
+
+	tasktrackerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(map[string]string{"service": "tasktracker"})
+	}))
+	defer tasktrackerServer.Close()
+
+	handler := buildBFFHandler(t, logger, tasktrackerServer.URL, []string{"http://192.168.56.1:8080"}, false)
+	token := newSignedBearerToken(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/bff/v1/tasktracker/v1/tasks/", nil)
+	req.Header.Set("Origin", "http://192.168.56.1:8080")
+	req.Header.Set("Authorization", token)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("Expected status 200, got %d", w.Code)
+	}
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "http://192.168.56.1:8080" {
+		t.Fatalf("Expected allow origin header, got %q", got)
+	}
+
+	if receivedAuth != token {
+		t.Fatalf("Expected Authorization header to be forwarded, got %q", receivedAuth)
+	}
+}
+
+func TestCORSDisallowedOriginDoesNotGetAllowOriginHeader(t *testing.T) {
+	logger := log.New("info")
+	handler := buildBFFHandler(t, logger, "", []string{"http://192.168.56.1:8080"}, false)
+
+	req := httptest.NewRequest(http.MethodOptions, "/bff/v1/tasktracker/v1/tasks/", nil)
+	req.Header.Set("Origin", "http://localhost:3000")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("Expected status 204, got %d", w.Code)
+	}
+
+	if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+		t.Fatalf("Expected no allow origin header, got %q", got)
+	}
+}
+
+func TestCORSAllowCredentials(t *testing.T) {
+	logger := log.New("info")
+	handler := buildBFFHandler(t, logger, "", []string{"http://192.168.56.1:8080"}, true)
+
+	req := httptest.NewRequest(http.MethodOptions, "/bff/v1/tasktracker/v1/tasks/", nil)
+	req.Header.Set("Origin", "http://192.168.56.1:8080")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	w := httptest.NewRecorder()
+
+	handler.ServeHTTP(w, req)
+
+	if got := w.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("Expected allow credentials header, got %q", got)
+	}
+}
+
+func buildBFFHandler(t *testing.T, logger *log.Logger, tasktrackerURL string, allowedOrigins []string, allowCredentials bool) http.Handler {
+	t.Helper()
+
+	validator := newTestJWTValidator(t)
+	limiter := ratelimit.NewTokenBucketLimiter(100)
+	router := proxy.NewRouter("", tasktrackerURL)
+	proxyHandler := proxy.NewHandler(router, logger)
+
+	handler := http.Handler(proxyHandler)
+	handler = auth.AuthMiddleware(validator)(handler)
+	handler = ratelimit.RateLimitMiddleware(limiter)(handler)
+	handler = log.LoggingMiddleware(logger)(handler)
+	handler = cors.Middleware(allowedOrigins, allowCredentials)(handler)
+
+	return handler
+}
+
+func newTestJWTValidator(t *testing.T) *auth.JWTValidator {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("Failed to generate RSA key: %v", err)
+	}
+
+	var issuerURL string
+	jwksServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/protocol/openid-connect/certs" {
+			http.NotFound(w, r)
+			return
+		}
+
+		eBytes := big.NewInt(int64(key.PublicKey.E)).Bytes()
+		n := base64.RawURLEncoding.EncodeToString(key.PublicKey.N.Bytes())
+		e := base64.RawURLEncoding.EncodeToString(eBytes)
+
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"keys": []map[string]string{
+				{
+					"kty": "RSA",
+					"use": "sig",
+					"kid": "test-key",
+					"alg": "RS256",
+					"n":   n,
+					"e":   e,
+				},
+			},
+		})
+	}))
+	t.Cleanup(jwksServer.Close)
+	issuerURL = jwksServer.URL
+
+	validator, err := auth.NewJWTValidator(issuerURL)
+	if err != nil {
+		t.Fatalf("Failed to initialize JWT validator: %v", err)
+	}
+
+	testSigningKey = key
+	testIssuerURL = issuerURL
+
+	return validator
+}
+
+var (
+	testSigningKey *rsa.PrivateKey
+	testIssuerURL  string
+)
+
+func newSignedBearerToken(t *testing.T) string {
+	t.Helper()
+
+	if testSigningKey == nil || testIssuerURL == "" {
+		t.Fatal("test JWT signer is not initialized")
+	}
+
+	claims := &auth.CustomClaims{
+		Sub: "test-user",
+		RegisteredClaims: jwt.RegisteredClaims{
+			Issuer:    testIssuerURL,
+			Subject:   "test-user",
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token.Header["kid"] = "test-key"
+
+	signedToken, err := token.SignedString(testSigningKey)
+	if err != nil {
+		t.Fatalf("Failed to sign JWT: %v", err)
+	}
+
+	return "Bearer " + signedToken
 }
